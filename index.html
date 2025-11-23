@@ -134,49 +134,44 @@ if uploaded_file is not None:
         st.write(f"**総ページ数:** {num_pages}")
 
         # Initialize session state for this file if it's new
-        # We use file name and size as a simple key to detect file change
         file_key = f"{uploaded_file.name}_{uploaded_file.size}"
         if "current_file_key" not in st.session_state or st.session_state.current_file_key != file_key:
             st.session_state.current_file_key = file_key
-            st.session_state.page_config = {
-                i: {"delete": False, "order": i + 1} for i in range(num_pages)
-            }
+            # Prepare initial data for data_editor
+            st.session_state.page_data = [
+                {"page_index": i, "page_label": f"ページ {i+1}", "new_order": i+1, "delete": False}
+                for i in range(num_pages)
+            ]
 
         with st.form("pdf_editor_form"):
             st.subheader("ページ編集")
-            
-            # Display pages
-            # To avoid rendering too many elements, we could paginate, but for now let's list them all
-            # as per requirements (text based)
-            
-            for i in range(num_pages):
-                col1, col2, col3 = st.columns([1, 2, 1])
-                
-                with col1:
-                    st.write(f"**ページ {i + 1}**")
-                
-                with col2:
-                    # Order input
-                    new_order = st.number_input(
-                        f"ページ {i+1} の順序",
+            st.caption("以下の表でページの順序変更や削除ができます。")
+
+            # Use data_editor for high performance
+            edited_data = st.data_editor(
+                st.session_state.page_data,
+                column_config={
+                    "page_index": None, # Hide original index
+                    "page_label": st.column_config.TextColumn(
+                        "ページ",
+                        disabled=True,
+                    ),
+                    "new_order": st.column_config.NumberColumn(
+                        "順序",
                         min_value=1,
                         max_value=num_pages,
-                        value=st.session_state.page_config[i]["order"],
-                        key=f"order_{i}",
-                        label_visibility="collapsed"
-                    )
-                    st.session_state.page_config[i]["order"] = new_order
-
-                with col3:
-                    # Delete checkbox
-                    is_deleted = st.checkbox(
+                        step=1,
+                        help="新しい順序を指定してください"
+                    ),
+                    "delete": st.column_config.CheckboxColumn(
                         "削除",
-                        value=st.session_state.page_config[i]["delete"],
-                        key=f"delete_{i}"
+                        help="チェックするとこのページは削除されます"
                     )
-                    st.session_state.page_config[i]["delete"] = is_deleted
-                
-                st.divider()
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="editor"
+            )
 
             submitted = st.form_submit_button("PDFを処理する", type="primary")
 
@@ -187,10 +182,9 @@ if uploaded_file is not None:
                 
                 # Create a list of (original_index, order) for non-deleted pages
                 pages_to_keep = []
-                for i in range(num_pages):
-                    config = st.session_state.page_config[i]
-                    if not config["delete"]:
-                        pages_to_keep.append((i, config["order"]))
+                for row in edited_data:
+                    if not row["delete"]:
+                        pages_to_keep.append((row["page_index"], row["new_order"]))
                 
                 # Sort by order
                 pages_to_keep.sort(key=lambda x: x[1])
