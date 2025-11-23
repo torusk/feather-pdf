@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>FeatherPDF</title>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.63.1/build/stlite.js"></script>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script>
+        stlite.mount(
+            {
+                requirements: ["pypdf", "streamlit"],
+                entrypoint: "app.py",
+                files: {
+                    "app.py": `
+import streamlit as st
+import pypdf
+import io
+
+st.set_page_config(page_title="FeatherPDF", page_icon="🪶", layout="centered", initial_sidebar_state="collapsed")
+
+st.title("🪶 FeatherPDF")
+st.markdown(
+    """
+    <style>
+    .stApp {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .security-notice {
+        background-color: #d4edda;
+        color: #155724;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        text-align: center;
+        font-weight: bold;
+    }
+    
+    /* Hide Streamlit branding and menu */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+
+    /* Localize File Uploader */
+    [data-testid="stFileUploader"] section > button {
+        display: none;
+    }
+    [data-testid="stFileUploader"] section::after {
+        content: "ファイルを選択";
+        display: block;
+        position: absolute;
+        top: 35px; /* Adjust based on layout */
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: white;
+        border: 1px solid rgba(49, 51, 63, 0.2);
+        border-radius: 0.25rem;
+        padding: 0.25rem 0.75rem;
+        font-size: 14px;
+        pointer-events: none; /* Let clicks pass through to the hidden input/button if possible, but button is hidden. 
+                               Actually, the button inside section is what triggers dialog. 
+                               Hiding it might break functionality if we can't click. 
+                               Better approach: Make text transparent and overlay. */
+    }
+
+    /* Better approach for File Uploader Localization */
+    [data-testid="stFileUploaderDropzone"] div div::before {
+        content: "ここにファイルをドラッグ＆ドロップ";
+        visibility: visible;
+        display: block;
+        font-size: 1rem;
+        margin-bottom: 5px;
+    }
+    [data-testid="stFileUploaderDropzone"] div div span {
+        display: none;
+    }
+    [data-testid="stFileUploaderDropzone"] div div small {
+        display: none;
+    }
+    [data-testid="stFileUploaderDropzone"] button {
+        visibility: hidden;
+        position: relative;
+    }
+    [data-testid="stFileUploaderDropzone"] button::after {
+        content: "ファイルを選択";
+        visibility: visible;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #fff;
+        color: #31333F;
+        border: 1px solid rgba(49, 51, 63, 0.2);
+        border-radius: 0.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+    /* Hover effect for the fake button */
+    [data-testid="stFileUploaderDropzone"] button:hover::after {
+        border-color: #ff4b4b;
+        color: #ff4b4b;
+    }
+    </style>
+    <div class="security-notice">
+        🔒 ファイルがブラウザ外に送信されることはありません。すべての処理はローカルで行われます。
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+uploaded_file = st.file_uploader("PDFファイルをアップロード", type="pdf")
+
+if "page_config" not in st.session_state:
+    st.session_state.page_config = {}
+
+if uploaded_file is not None:
+    try:
+        # Read PDF
+        # We need to read it into a BytesIO object because pypdf expects a file-like object
+        # and uploaded_file can be used directly but let's be safe and explicit
+        pdf_bytes = uploaded_file.getvalue()
+        pdf_reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        num_pages = len(pdf_reader.pages)
+
+        st.write(f"**総ページ数:** {num_pages}")
+
+        # Initialize session state for this file if it's new
+        # We use file name and size as a simple key to detect file change
+        file_key = f"{uploaded_file.name}_{uploaded_file.size}"
+        if "current_file_key" not in st.session_state or st.session_state.current_file_key != file_key:
+            st.session_state.current_file_key = file_key
+            st.session_state.page_config = {
+                i: {"delete": False, "order": i + 1} for i in range(num_pages)
+            }
+
+        with st.form("pdf_editor_form"):
+            st.subheader("ページ編集")
+            
+            # Display pages
+            # To avoid rendering too many elements, we could paginate, but for now let's list them all
+            # as per requirements (text based)
+            
+            for i in range(num_pages):
+                col1, col2, col3 = st.columns([1, 2, 1])
+                
+                with col1:
+                    st.write(f"**ページ {i + 1}**")
+                
+                with col2:
+                    # Order input
+                    new_order = st.number_input(
+                        f"ページ {i+1} の順序",
+                        min_value=1,
+                        max_value=num_pages,
+                        value=st.session_state.page_config[i]["order"],
+                        key=f"order_{i}",
+                        label_visibility="collapsed"
+                    )
+                    st.session_state.page_config[i]["order"] = new_order
+
+                with col3:
+                    # Delete checkbox
+                    is_deleted = st.checkbox(
+                        "削除",
+                        value=st.session_state.page_config[i]["delete"],
+                        key=f"delete_{i}"
+                    )
+                    st.session_state.page_config[i]["delete"] = is_deleted
+                
+                st.divider()
+
+            submitted = st.form_submit_button("PDFを処理する", type="primary")
+
+        if submitted:
+            with st.spinner("PDFを処理中..."):
+                # 1. Filter out deleted pages
+                # 2. Sort by order
+                
+                # Create a list of (original_index, order) for non-deleted pages
+                pages_to_keep = []
+                for i in range(num_pages):
+                    config = st.session_state.page_config[i]
+                    if not config["delete"]:
+                        pages_to_keep.append((i, config["order"]))
+                
+                # Sort by order
+                pages_to_keep.sort(key=lambda x: x[1])
+                
+                if not pages_to_keep:
+                    st.error("すべてのページが削除されました！少なくとも1ページは残してください。")
+                else:
+                    # Create new PDF
+                    pdf_writer = pypdf.PdfWriter()
+                    for original_index, _ in pages_to_keep:
+                        pdf_writer.add_page(pdf_reader.pages[original_index])
+                    
+                    # Write to buffer
+                    output_buffer = io.BytesIO()
+                    pdf_writer.write(output_buffer)
+                    output_pdf = output_buffer.getvalue()
+                    
+                    st.success("PDFの処理が完了しました！")
+                    
+                    st.download_button(
+                        label="処理済みPDFをダウンロード",
+                        data=output_pdf,
+                        file_name=f"processed_{uploaded_file.name}",
+                        mime="application/pdf",
+                        type="primary"
+                    )
+
+    except Exception as e:
+        st.error(f"PDFの処理中にエラーが発生しました: {e}")
+
+else:
+    st.info("開始するにはPDFファイルをアップロードしてください。")
+`,
+                },
+            },
+            document.getElementById("root")
+        );
+    </script>
+</body>
+
+</html>
